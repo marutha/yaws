@@ -97,10 +97,10 @@
           soap_srv_mods = [],
 
           ysession_mod = yaws_session_server, % storage module for ysession
-          acceptor_pool_size = 8              % size of acceptor proc pool
+          acceptor_pool_size = 8,             % size of acceptor proc pool
+
+          mime_types_info                     % undefined | #mime_types_info{}
          }).
-
-
 
 -record(ssl, {
           keyfile,
@@ -170,8 +170,6 @@
         SC#sconf{flags = yaws:flag(SC#sconf.flags, ?SC_ADD_PORT, Bool)}).
 -define(sc_set_statistics(SC, Bool),
         SC#sconf{flags = yaws:flag(SC#sconf.flags, ?SC_STATISTICS, Bool)}).
--define(sc_set_ssl(SC, Bool),
-        SC#sconf{flags = yaws:flag(SC#sconf.flags, ?SC_SSL, Bool)}).
 -define(sc_set_tilde_expand(SC, Bool),
         SC#sconf{flags = yaws:flag(SC#sconf.flags, ?SC_TILDE_EXPAND, Bool)}).
 -define(sc_set_dir_listings(SC, Bool),
@@ -213,7 +211,7 @@
           yaws,                         % server string for this vhost
           ets,                          % local store for this server
           ssl,                          % undefined | #ssl{}
-          authdirs = [],
+          authdirs = [],                % [{docroot, [#auth{}]}]
           partial_post_size = 10240,
 
           %% An item in the appmods list  can be either of the
@@ -233,6 +231,7 @@
           start_mod,                    % user provided module to be started
           allowed_scripts = [yaws,php,cgi,fcgi],
           tilde_allowed_scripts = [],
+          index_files = ["index.yaws", "index.html", "index.php"],
           revproxy = [],
           soptions = [],
           extra_cgi_vars = [],
@@ -240,7 +239,10 @@
           fcgi_app_server,              % FastCGI application server {host,port}
           php_handler = {cgi, "/usr/bin/php-cgi"},
           shaper,
-          deflate_options
+          deflate_options,              % undefined | #deflate{}
+          mime_types_info,              % undefined | #mime_types_info{}
+                                        % if undefined, global config is used
+          dispatch_mod                  % custom dispatch module
          }).
 
 
@@ -285,6 +287,16 @@
 
           %% [{Type, undefined|SubType}] | all
           mime_types = ?DEFAULT_COMPRESSIBLE_MIME_TYPES
+         }).
+
+
+%% Internal record used to set information about mime-types
+-record(mime_types_info, {
+          mime_types_file, % an absolute filename path
+          types    = [],   % a map between mime-types and extensions
+          charsets = [],   % a map between charsets and extensions
+          default_type = "text/plain",
+          default_charset
          }).
 
 
@@ -336,6 +348,7 @@
           content_encoding,
           transfer_encoding,
           www_authenticate,
+          vary,
           other                % misc other headers
          }).
 
@@ -346,7 +359,6 @@
           url,
           intercept_mod
          }).
-
 
 
 %% as read by application:get_env()

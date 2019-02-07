@@ -11,7 +11,6 @@ logdir = %logdir%
 # beam code can be placed. The daemon will add these
 # directories to its search path.
 ebin_dir = %yawsdir%/examples/ebin
-ebin_dir = %vardir%/yaws/ebin
 
 # This is a directory where application specific .hrl
 # files can be placed. Application-specific .yaws code can
@@ -48,10 +47,6 @@ process_options = "[]"
 # invoking yaws from the shell as in
 # yaws -i -T -x (see man yaws).
 trace = false
-
-# Enable this if we want to use the old OTP ssl implementation
-# OTP R13B03 is known to work with this flag set to false (default).
-use_old_ssl = false
 
 # It is possible to have yaws start additional application-specific code at
 # startup. Set runmod to the name of the module you want yaws to start. It
@@ -111,7 +106,7 @@ keepalive_timeout = 30000
 # The examples below first show two virthosted servers on the same IP (0.0.0.0)
 # in this case, but an explicit IP can be given as well.
 
-<server %host%>
+<server *>
         port = %port%
         listen = 0.0.0.0
         docroot = %docroot%
@@ -122,7 +117,7 @@ keepalive_timeout = 30000
 <server localhost>
         port = %port%
         listen = 0.0.0.0
-        docroot = /tmp
+        docroot = %tmpdir%
         dir_listings = true
         auth_log = true
         statistics = true
@@ -136,15 +131,16 @@ keepalive_timeout = 30000
 
 # Now an SSL server
 
-<server %host%>
+<server *>
         port = %sslport%
-        docroot = /tmp
+        docroot = %tmpdir%
         listen = 0.0.0.0
         dir_listings = true
         auth_log = true
         <ssl>
                 keyfile = %certdir%/yaws-key.pem
                 certfile = %certdir%/yaws-cert.pem
+                dhfile = %certdir%/dhparams.pem
                 depth = 0
         </ssl>
 </server>

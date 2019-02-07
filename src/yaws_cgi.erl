@@ -21,11 +21,11 @@
 
 %%% TODO: Implement FastCGI filter role.
 
--export([cgi_worker/7, fcgi_worker/5]).
+-export([cgi_worker/7, fcgi_worker/6]).
 
-%%%==============================================================================
+%%%=====================================================================
 %%% Code shared between CGI and FastCGI
-%%%==============================================================================
+%%%=====================================================================
 
 -define(ASCII_NEW_LINE, 10).
 -define(ASCII_CARRIAGE_RETURN, 13).
@@ -98,7 +98,8 @@ get_from_worker(Arg, WorkerPid) ->
                    end,
             case Next of
                 normal ->
-                    {ContentResps, NotCtnt} = filter2(fun iscontent/1, AllResps),
+                    {ContentResps, NotCtnt} =
+                        filter2(fun iscontent/1, AllResps),
                     {RedirResps, Others} = filter2(fun isredirect/1, NotCtnt),
                     case RedirResps of
                         [R|_] ->
@@ -185,13 +186,16 @@ get_socket_sockname(Socket) ->
 
 
 build_env(Arg, Scriptfilename, Pathinfo, ExtraEnv, SC) ->
-    H = Arg#arg.headers,
-    R = Arg#arg.req,
-    case R#http_request.path of
+    H       = Arg#arg.headers,
+    Req     = Arg#arg.req,
+    OrigReq = Arg#arg.orig_req,
+
+    %% Use the original request to set REQUEST_URI
+    case OrigReq#http_request.path of
         {abs_path, RequestURI} -> ok;
         _ -> RequestURI = undefined
     end,
-    {Maj,Min} = R#http_request.version,
+    {Maj,Min} = Req#http_request.version,
     {Hostname, Hosttail}=lists:splitwith(fun(X)->X /= $: end,
                                          checkdef(H#headers.host)),
     Hostport = case Hosttail of
@@ -259,12 +263,12 @@ build_env(Arg, Scriptfilename, Pathinfo, ExtraEnv, SC) ->
     end,
 
     Extra_CGI_Vars = lists:flatmap(fun({Dir, Vars}) ->
-					   case lists:prefix(Dir, Scriptname) of
-					       true -> Vars;
-					       false -> []
-					   end
-				   end,
-				   SC#sconf.extra_cgi_vars),
+                                           case lists:prefix(Dir, Scriptname) of
+                                               true -> Vars;
+                                               false -> []
+                                           end
+                                   end,
+                                   SC#sconf.extra_cgi_vars),
 
     %% Some versions of erlang:open_port can't handle query strings that
     %% end with an equal sign. This is because the broken versions treat
@@ -311,7 +315,7 @@ build_env(Arg, Scriptfilename, Pathinfo, ExtraEnv, SC) ->
             {"SERVER_PROTOCOL", "HTTP/" ++ integer_to_list(Maj) ++
              "." ++ integer_to_list(Min)},
             {"SERVER_PORT", Hostport},
-            {"REQUEST_METHOD", yaws:to_list(R#http_request.method)},
+            {"REQUEST_METHOD", yaws:to_list(Req#http_request.method)},
             {"REQUEST_URI", RequestURI},
             {"DOCUMENT_ROOT",         Arg#arg.docroot},
             {"DOCUMENT_ROOT_MOUNT", Arg#arg.docroot_mount},
@@ -364,10 +368,20 @@ build_env(Arg, Scriptfilename, Pathinfo, ExtraEnv, SC) ->
             {"HTTP_IF_NONE_MATCH", H#headers.if_none_match},
             {"HTTP_IF_UNMODIFIED_SINCE", H#headers.if_unmodified_since},
             {"HTTP_COOKIE", flatten_val(make_cookie_val(H#headers.cookie))}
-           ]++lists:map(fun({http_header,_,Var,_,Val})->{tohttp(Var),Val} end,
-                        H#headers.other)
+           ]++ other_headers(H#headers.other)
           )) ++
-	Extra_CGI_Vars.
+        Extra_CGI_Vars.
+
+other_headers(Headers) ->
+    lists:zf(fun({http_header,_,Var,_,Val}) ->
+                     case tohttp(Var) of
+                         "HTTP_PROXY" ->
+                             %% See http://httpoxy.org/
+                             false;
+                         HTTP ->
+                             {true, {HTTP,Val}}
+                     end
+             end, Headers).
 
 tohttp(X) ->
     "HTTP_"++lists:map(fun tohttp_c/1, yaws:to_list(X)).
@@ -467,9 +481,9 @@ get_opt(Key, List, Default) ->
     end.
 
 
-%%%==============================================================================
+%%%==========================================================================
 %%% Code specific to CGI
-%%%==============================================================================
+%%%==========================================================================
 
 %%%  TO DO:  Handle failure and timeouts.
 
@@ -529,8 +543,16 @@ cgi_start_worker(Arg, Exefilename, Scriptfilename, Pathinfo, ExtraEnv, SC) ->
 
 
 
-cgi_worker(Parent, Arg, Exefilename, Scriptfilename, Pathinfo, ExtraEnv,SC) ->
-    Env = build_env(Arg, Scriptfilename, Pathinfo, ExtraEnv,SC),
+cgi_worker(Parent, Arg, Exefilename, Scriptfilename, Pathinfo, ExtraEnv0, SC) ->
+    ExtraEnv = lists:map(fun({K,V}) when is_binary(K), is_binary(V) ->
+                                 {binary_to_list(K), binary_to_list(V)};
+                            ({K,V}) when is_binary(K) ->
+                                 {binary_to_list(K), V};
+                            ({K,V}) when is_binary(V) ->
+                                 {K, binary_to_list(V)};
+                            (KV) -> KV
+                         end, ExtraEnv0),
+    Env = build_env(Arg, Scriptfilename, Pathinfo, ExtraEnv, SC),
     ?Debug("~p~n", [Env]),
     CGIPort = open_port({spawn, Exefilename},
                         [{env, Env},
@@ -652,9 +674,9 @@ cgi_add_resp(Bin, Port) ->
     end.
 
 
-%%%==============================================================================
+%%%===========================================================================
 %%% Code specific to FastCGI
-%%%==============================================================================
+%%%===========================================================================
 
 -define(FCGI_VERSION_1, 1).
 
@@ -798,8 +820,10 @@ call_fcgi(Role, Arg, Options) ->
                    [Role, fcgi_role_name(Role),
                     Options,
                     Arg]),
+            GlobalConf = get(gc),
             ServerConf = get(sc),
-            WorkerPid = fcgi_start_worker(Role, Arg, ServerConf, Options),
+            WorkerPid = fcgi_start_worker(Role, Arg, GlobalConf, ServerConf,
+              Options),
             handle_clidata(Arg, WorkerPid)
     end.
 
@@ -825,12 +849,12 @@ fcgi_worker_fail_if(true, WorkerState, Reason) ->
 fcgi_worker_fail_if(_Condition, _WorkerState, _Reason) ->
     ok.
 
-fcgi_start_worker(Role, Arg, ServerConf, Options) ->
+fcgi_start_worker(Role, Arg, GlobalConf, ServerConf, Options) ->
     proc_lib:spawn(?MODULE, fcgi_worker,
-                   [self(), Role, Arg, ServerConf, Options]).
+                   [self(), Role, Arg, GlobalConf, ServerConf, Options]).
 
 
-fcgi_worker(ParentPid, Role, Arg, ServerConf, Options) ->
+fcgi_worker(ParentPid, Role, Arg, GlobalConf, ServerConf, Options) ->
     {DefaultSvrHost, DefaultSvrPort} =
         case ServerConf#sconf.fcgi_app_server of
             undefined ->
@@ -853,9 +877,11 @@ fcgi_worker(ParentPid, Role, Arg, ServerConf, Options) ->
                             ?sc_fcgi_trace_protocol(ServerConf)),
     LogAppError = get_opt(log_app_error, Options,
                           ?sc_fcgi_log_app_error(ServerConf)),
+    TcpOptions = yaws:gconf_nslookup_pref(GlobalConf),
     AppServerSocket =
         fcgi_connect_to_application_server(PreliminaryWorkerState,
-                                           AppServerHost, AppServerPort),
+                                           AppServerHost, AppServerPort,
+                                           TcpOptions),
     ?Debug("Start FastCGI worker:~n"
            "  Role = ~p (~s)~n"
            "  AppServerHost = ~p~n"
@@ -897,6 +923,9 @@ fcgi_worker(ParentPid, Role, Arg, ServerConf, Options) ->
 fcgi_pass_through_client_data(WorkerState) ->
     ParentPid = WorkerState#fcgi_worker_state.parent_pid,
     receive
+        {ParentPid, clidata, <<>>} ->
+            ParentPid ! {self(), clidata_receipt},
+            fcgi_pass_through_client_data(WorkerState);
         {ParentPid, clidata, ClientData} ->
             ParentPid ! {self(), clidata_receipt},
             fcgi_send_stdin(WorkerState, ClientData),
@@ -906,9 +935,10 @@ fcgi_pass_through_client_data(WorkerState) ->
     end.
 
 
-fcgi_connect_to_application_server(WorkerState, Host, Port) ->
-    Options = [binary, {packet, 0}, {active, false}, {nodelay, true}],
-    case gen_tcp:connect(Host, Port, Options, ?FCGI_CONNECT_TIMEOUT_MSECS) of
+fcgi_connect_to_application_server(WorkerState, Host, Port, TcpOptions) ->
+    Options = [binary, {packet, 0}, {active, false}, {nodelay, true} |
+      TcpOptions],
+    case yaws:tcp_connect(Host, Port, Options, ?FCGI_CONNECT_TIMEOUT_MSECS) of
         {error, Reason} ->
             fcgi_worker_fail(WorkerState,
                              {"connect to application server failed", Reason});
@@ -1033,6 +1063,12 @@ fcgi_encode_record(WorkerState, Type, RequestId, NameValueList)
                        fcgi_encode_name_value_list(NameValueList));
 
 fcgi_encode_record(WorkerState, Type, RequestId, ContentData)
+  when is_binary(ContentData), size(ContentData) > 65535  ->
+    <<Bin:65535/binary, Rest/binary>> = ContentData,
+    [fcgi_encode_record(WorkerState, Type, RequestId, Bin),
+     fcgi_encode_record(WorkerState, Type, RequestId, Rest)];
+
+fcgi_encode_record(WorkerState, Type, RequestId, ContentData)
   when is_binary(ContentData) ->
     Version = 1,
     ContentLength = size(ContentData),
@@ -1068,8 +1104,10 @@ fcgi_encode_name_value_list(_NameValueList = [{Name, Value} | Tail]) ->
 
 fcgi_encode_name_value(Name, _Value = undefined) ->
     fcgi_encode_name_value(Name, "");
-fcgi_encode_name_value(Name, Value) when is_list(Name) and is_list(Value) ->
-    NameSize = iolist_size(Name),
+fcgi_encode_name_value(Name0, Value0) ->
+    Name = unicode:characters_to_binary(Name0),
+    Value = unicode:characters_to_binary(Value0),
+    NameSize = byte_size(Name),
     %% If name size is < 128, encode it as one byte with the high bit clear.
     %% If the name size >= 128, encoded it as 4 bytes with the high bit set.
     NameSizeData = if
@@ -1079,7 +1117,7 @@ fcgi_encode_name_value(Name, Value) when is_list(Name) and is_list(Value) ->
                            <<(NameSize bor 16#80000000):32>>
                    end,
     %% Same encoding for the value size.
-    ValueSize = iolist_size(Value),
+    ValueSize = byte_size(Value),
     ValueSizeData = if
                         ValueSize < 128 ->
                             <<ValueSize:8>>;
@@ -1169,11 +1207,13 @@ fcgi_add_resp(WorkerState, OldData) ->
 
 fcgi_stream_data_loop(WorkerState) ->
     YawsWorkerPid = WorkerState#fcgi_worker_state.yaws_worker_pid,
-    case fcgi_get_output(WorkerState) of
+    case catch fcgi_get_output(WorkerState) of
         {data, Data} ->
             yaws_api:stream_chunk_deliver_blocking(YawsWorkerPid, Data),
             fcgi_stream_data_loop(WorkerState);
         {exit_status, _Status} ->
+            yaws_api:stream_chunk_end(YawsWorkerPid);
+        {'EXIT', _Reason} ->
             yaws_api:stream_chunk_end(YawsWorkerPid)
     end.
 

@@ -145,6 +145,7 @@ write_log(ServerName, Type, {Fd, _FileName}, Infos) ->
 init([]) ->
     process_flag(trap_exit, true),
     ets:new(yaws_log, [named_table, set, protected, {keypos, 2}]),
+    yaws_dynopts:start_error_logger(),
     {ok, #state{running = false, now = fmtnow()}}.
 
 %%----------------------------------------------------------------------
@@ -301,10 +302,11 @@ handle_cast({_ServerName, access, Fd, {Ip, Req, InH, OutH, _}}, State) ->
             Ver = case Req#http_request.version of
                       {1,0} -> "HTTP/1.0";
                       {1,1} -> "HTTP/1.1";
-                      {0,9} -> "HTTP/0.9"
+                      {0,9} -> "HTTP/0.9";
+                      _     -> "HTTP/X.X"
                   end,
 
-            Path      = yaws_server:safe_decode_path(Req#http_request.path),
+            Path      = yaws_server:safe_path(Req#http_request.path),
             Meth      = yaws:to_list(Req#http_request.method),
             Referer   = optional_header(InH#headers.referer),
             UserAgent = optional_header(InH#headers.user_agent),
@@ -332,7 +334,8 @@ handle_cast({ServerName, auth, Fd, {Ip, Path, Item}}, State) ->
                        {ok, User}       -> [" OK user=", User];
                        403              -> [" 403"];
                        {401, Realm}     -> [" 401 realm=", Realm];
-                       {401, User, PWD} -> [" 401 user=", User, " badpwd=", PWD]
+                       {401, User, PWD} -> [" 401 user=", User, " badpwd=",PWD];
+                       _                -> ""
                    end, "\n"],
             file:write(Fd, safe_log_data(Msg)),
             {noreply, State};
@@ -459,7 +462,7 @@ fmt_ip(HostName, _) ->
 
 fmtnow() ->
     {{Year, Month, Day}, {Hour, Min, Sec}} =
-        calendar:now_to_local_time(now()),
+        calendar:now_to_local_time(yaws:get_time_tuple()),
     ["[",fill_zero(Day,2),"/",yaws:month(Month),"/",integer_to_list(Year),":",
      fill_zero(Hour,2),":",fill_zero(Min,2),":",
      fill_zero(Sec,2)," ",zone(),"]"].

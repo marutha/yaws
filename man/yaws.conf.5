@@ -6,22 +6,23 @@
 .PP
 Yaws is fast lightweight web server. It reads a configuration file called
 yaws.conf to control its operations. The configuration contains two distinct
-parts a global part which affects all the virtual hosts and a server part where
+parts: a global part which affects all the virtual hosts and a server part where
 options for each virtual host is supplied.
 
 .SH GLOBAL PART
 
 .TP
-\fBlogdir = Directory\fR
-All Yaws logs will be written to files in this directory. There are several
-different log files written by Yaws:
+\fBlogdir = [+]Directory\fR
+All Yaws logs will be written to files in this directory. If specified with
+\fB+\fR, Yaws will attempt to create the directory if it does not exist. There
+are several different log files written by Yaws:
 
 \fBreport.log\fR - this is a text file that contains all error logger printouts
 from Yaws.
 
 \fB<Host>.access\fR - for each virtual host served by Yaws, a file <Host>.access
-will be written which contains an access log in Common Log Format. (See
-http://en.wikipedia.org/wiki/Common_Log_Format for more details on Common Log
+will be written that contains an access log in NCSA combined/XLF/ELF log format. (See
+http://www.w3.org/TR/WD-logfile.html for more details on Extended Log File
 Format.)
 
 \fB<Host>.auth\fR - for each virtual host served by Yaws, a file <Host>.auth
@@ -49,10 +50,19 @@ This directive adds Directory to the Erlang search path. It is possible to have
 several of these commands in the configuration file. The default value is
 \fI"yaws_dir"/examples/ebin\fR
 
+.TP
+\fBsrc_dir = Directory\fR
+This directive defines a Directory as a \fIsource\fR directory. Yaws will
+compile all erlang modules found in this directory and all its
+subdirectories. The compilation occurs when the configuration is loaded or
+reloaded. The \fBinclude_dir\fR directives are used to search for includes
+files. Multiple \fBsrc_dir\fR directives may be used. There is no such directory
+configured by default.
+
 
 .TP
 \fBid = String\fR
-It is possible run multiple Yaws servers on the same machine. We use the id of a
+It is possible to run multiple Yaws servers on the same machine. We use the id of a
 Yaws server to control it using the different control commands such as:
 
 .nf
@@ -60,9 +70,9 @@ Yaws server to control it using the different control commands such as:
 .fi
 
 To stop the Yaws server with id "foobar". Each Yaws server will write its
-internals data into a file called $HOME/.yaws/yaws/ID where ID is the identity
-of the server. Yaws also creates a file called ${VARDIR}/run/yaws/ctl-${ID}
-which contain the port number where the server is listening for control
+internal data into a file called $HOME/.yaws/yaws/ID where ID is the identity
+of the server. Yaws also creates a file called $HOME/.yaws/yaws/ID/CTL
+which contains the port number where the server is listening for control
 commands. The default id is \fI"default"\fR.
 
 .TP
@@ -109,11 +119,6 @@ This enables traffic or http tracing. Tracing is also possible to enable with a
 command line flag to Yaws. Default is \fIfalse\fR.
 
 .TP
-\fBuse_old_ssl = true | false\fR
-This re-enables the old OTP SSL implementation. By default we use the new SSL
-implementation.
-
-.TP
 \fBauth_log  = true | false\fR
 \fBDeprecated and ignored. Now, this target must be set in server part.\fR
 
@@ -139,6 +144,23 @@ of valid process options. The supported options are \fIfullsweep_after\fR,
 \fImin_heap_size\fR, and \fImin_bin_vheap_size\fR, each taking an associated
 integer value. Other process options are ignored. The proplist may also be
 empty. See \fBerlang:spawn_opt/4\fR for details on these options.
+
+.TP
+\fBlarge_file_chunk_size = Integer\fR
+Set the chunk size used by Yaws to send large files when sendfile is not
+supported or disabled. The default value is \fI10240\fR.
+
+.TP
+\fBlarge_file_sendfile = erlang | yaws | disable\fR
+Set the version of sendfile method to use to send large files (if supported):
+
+\fBerlang\fR - use \fIfile:sendfile/5\fR, if supported.
+
+\fByaws\fR - use Yaws sendfile linked-in driver, if supported.
+
+\fBdisable\fR - do not use any sendfile method, but \fIgen_tcp:send/2\fR.
+
+The default value is \fIyaws\fR.
 
 .TP
 \fBacceptor_pool_size = Integer\fR
@@ -205,11 +227,32 @@ want the Erlang errorlog written to a report.log file.  Default value is
 
 .TP
 \fBysession_mod = Module\fR
-Allows to specify a different Yaws session storage mechanism instead of an ETS
+Allows specifying a different Yaws session storage mechanism instead of an ETS
 table. One of the drawbacks of the default yaws_session_server implementation is
 that server side cookies are lost when the server restarts. Specifying a
-different module here will pass all writes/read operations to this module (it
-must implements appropriate callbacks).
+different module here will pass all write/read operations to this module (it
+must implement appropriate callbacks).
+
+.TP
+\fBysession_cookiegen = Module\fR
+Allows specifying a different Yaws session cookie generator than the
+built-in default. \fIModule\fR is expected to provide a \fInew_cookie/0\fR
+function that returns a session cookie in the form of a list. Such a cookie
+generator module must be careful to return a unique cookie each time it's
+called.
+
+.TP
+\fBysession_idle_timeout = Integer\fR
+Controls Yaws session idle cleanup. If a server has been idle for
+\fIysession_idle_timeout\fR milliseconds, check all Yaws sessions and
+remove any that have timed out. The default \fIysession_idle_timeout\fR
+value is 2*60*1000 (2 minutes).
+
+.TP
+\fBysession_long_timeout = Integer\fR
+Controls Yaws session periodic cleanup. Every \fIysession_long_timeout\fR
+milliseconds, check all Yaws sessions and remove any that have timed
+out. The default \fIysession_long_timeout\fR value is 60*60*1000 (1 hour).
 
 .TP
 \fBrunmod = ModuleName\fR
@@ -219,12 +262,15 @@ Yaws startup shell script for our own application.
 
 .TP
 \fBpick_first_virthost_on_nomatch = true | false\fR
-When Yaws gets a request, it extracts the Host: header from the client request
-to choose a virtual server amongst all servers with the same IP/Port pair.  This
-configuration parameter decides whether Yaws should pick the first (as defined
-in the yaws.conf file) if no name match or not.  In real live hosting scenarios
-we typically want this to be false whereas in testing/development scenarios it
-may be convenient to set it to true. Default is \fItrue\fR.
+When Yaws gets a request, it extracts the Host header from the client
+request to choose a virtual server amongst all servers with the same
+IP/Port pair.  This configuration parameter decides whether Yaws should
+pick the first server (as defined in the yaws.conf file) if no name match
+or not. If this is false and no Host header is present in the request, Yaws
+returns a 400 Bad Request as required by the HTTP standard. In real live
+hosting scenarios we typically want this to be false, whereas in
+testing/development scenarios it may be convenient to set it to
+true. Default is \fItrue\fR.
 
 .TP
 \fBkeepalive_timeout = TimeInMilliseconds | infinity\fR
@@ -233,14 +279,30 @@ close after keepalive_timeout milliseconds unless a new request is received in
 that time. The default value is \fI30000\fR. The value \fIinfinity\fR is legal
 but not recommended.
 
-
 .TP
 \fBsubconfig = File\fR
-Load specified config file.
+Load specified config file. Absolute paths or relative ones to the configuration
+location are allowed. Unix-style wildcard strings can be used to include several
+files at once. See \fIfilelib:wildcard/1\fR for details. Hidden files, starting
+by a dot, will be ignored. For example:
+
+.nf
+  subconfig = /etc/yaws/global.conf
+  subconfig = /etc/yaws/vhosts/*.conf
+.fi
+
+Or, relatively to the configuration location:
+
+.nf
+  subconfig = global.conf
+  subconfig = vhosts/*.conf
+.fi
 
 .TP
 \fBsubconfigdir = Directory\fR
-Load all config file in specified directory.
+Load all config files found in the specified directory. The given Directory can
+be an absolute path or relative to the configuration location. Hidden files,
+starting by a dot, will be ignored.
 
 .TP
 \fBx_forwarded_for_log_proxy_whitelist = ListOfUpstreamProxyServerIps\fR
@@ -299,6 +361,42 @@ The mappings defined using this directive will overload all other
 definitions. If a file extension is defined several times, only the last one is
 kept. Multiple \fBadd_charsets\fR directives may be used.
 
+.TP
+\fBsni = disable | enable | strict\fR
+Enables or disables the TLS SNI (Server Name Indication) support.
+
+When disabled (or not supported), all virtual servers in the same group (same
+IP/Port) must share the same SSL configuration, especially the same SSL
+certificate. Only the HTTP Host header will be considered to find the right
+virtual server.
+
+When enabled, SSL configuration can be different from a virtual server to
+another, each one can have its own SSL certificate. In this case, if a client
+provides a SNI hostname, it will be used to find the right virtual server. To
+accept the SNI information from the client, The first virtual server (the
+default one, see \fBpick_first_virthost_on_nomatch\fR) \fBmust\fR include TLS as
+a permitted protocol.
+
+If \fBsni\fR directive is set to \fIenable\fR, non SNI clients are allowed. For
+such clients, virtual servers are selected as if Yaws did not have SNI
+support. If it is set to \fIstrict\fR, SNI hostname is mandatary to access a SSL
+virtual server. But, in all cases, when SNI support is enabled, if a client
+provides a SNI hostname, it \fBmust\fR match the HTTP Host header (which is
+mandatory too).  Note that the first virtual server (the default one) will be
+used for any request where the provided SNI hostname doesn't match any of
+virtual server names. So, it is important that the first virtual server have the
+most restrictive access control, otherwise clients can access restricted
+resources by sending a request for any unknown hostname. (This isn't actually
+any different from using virtual servers without SNI support.)
+
+The \fBsni\fR directive is a global one, so if you set it to \fIstrict\fR, non
+SNI clients will be refused for \fBall\fR SSL groups. See \fBrequire_sni\fR
+directive from the server part to mitigate this requirement.
+
+Default is \fIdisable\fR.
+
+\fBWARNING: The SNI support was introduced in the SSL application in Erlang/OTP
+18.0, so Yaws ignores it for previous releases.\fR
 
 .SH SERVER PART
 Yaws can virthost several web servers on the same IP address as well as several
@@ -324,14 +422,47 @@ specify several addresses to listen on.
 .TP
 \fBlisten_backlog = Integer\fR
 This sets the TCP listen backlog for the server to define the maximum length the
-queue of pending connections may grow to. The default is the same as the default
-provided by \fIgen_tcp:listen/2\fR, which is 5.
+queue of pending connections may grow to. The default is 1024.
+
+.TP
+\fB<listen_opts> ... </listen_opts>\fR
+Defines extra options to be set on the listen socket and, by inheritance, on
+accepted sockets. See \fIinet:setopts/2\fR for details. Supported options are:
+
+\fBbuffer = Integer\fR (default: same as \fIinet:setopts/2\fR)
+
+\fBdelay_send = true  | false \fR (default: same as \fIinet:setopts/2\fR)
+
+\fBlinger = Integer | false \fR (default: same as \fIinet:setopts/2\fR)
+
+\fBnodelay = true | false \fR (default: same as \fIinet:setopts/2\fR)
+
+\fBpriority = Integer\fR (default: same as \fIinet:setopts/2\fR)
+
+\fBsndbuf = Integer\fR (default: same as \fIinet:setopts/2\fR)
+
+\fBrecbuf = Integer\fR (default: same as \fIinet:setopts/2\fR)
+
+\fBsend_timeout = Integer | infinity\fR (default: same as \fIinet:setopts/2\fR)
+
+\fBsend_timeout_close = true | false \fR (default: same as \fIinet:setopts/2\fR)
+.RE
 
 .TP
 \fBserver_signature = String\fR
 This directive sets the "Server: " output header to the custom value and
 overloads the global one for this virtual server.
 
+.TP
+\fBsubconfig = File\fR
+Same as \fBsubconfig\fR directive of the global part, but here files should only
+contain directives allowed in the server part.
+
+
+.TP
+\fBsubconfigdir = Directory\fR
+Same as \fBsubconfigdir\fR directive of the global part, but here files should only
+contain directives allowed in server part.
 
 .TP
 \fBrhost = Host[:Port]\fR
@@ -344,7 +475,7 @@ iptables are used to redirect traffic to port 80 to port 8000 (most NAT:ing
 firewalls will also do this for you).
 
 .TP
-\fBrscheme = http | https\fR
+\fBrmethod = http | https\fR
 This forces all local redirects issued by the server to use this method. This is
 useful when an SSL off-loader, or stunnel, is used in front of Yaws.
 
@@ -354,7 +485,7 @@ Enable or disable the auth log for this virtual server. Default is \fItrue\fR.
 
 .TP
 \fBaccess_log = true | false\fR
-Setting this directive to false turns of traffic logging for this virtual
+Setting this directive to false turns off traffic logging for this virtual
 server. The default value is \fItrue\fR.
 
 .TP
@@ -422,7 +553,7 @@ the logger.
 \fBshaper = Module\fR
 Defines a module to control access to this virtual server. Access can be
 controlled based on the IP address of the client. It is also possible to
-throttles HTTP requests based on the client's download rate. This module must
+throttle HTTP requests based on the client's download rate. This module must
 implement the behaviour \fIyaws_shaper\fR.
 
 There is no such module configured by default.
@@ -450,8 +581,10 @@ Turns on/off statistics gathering for a virtual server. Default is \fIfalse\fR.
 
 .TP
 \fBfcgi_app_server = Host:Port\fR
-The hostname and TCP port number of a FastCGI application server. The TCP port
-number is not optional. There is no default value.
+The hostname and TCP port number of a FastCGI application server.
+To specify an IPv6 address, put it inside square brackets (ex:
+"[::1]:9000"). The TCP port number is not optional. There is no default
+value.
 
 .TP
 \fBfcgi_trace_protocol = true | false\fR
@@ -482,11 +615,12 @@ used, the specified value must be strictly positive. The default value is
 .RE
 
 .IP
-\fBcompress_level = none | default | best_compression | best_speed | 0..9\fR
+\fBcompression_level = none | default | best_compression | best_speed | 0..9\fR
 .RS 12
-Defines the compression level to be used. 0 (none), gives no compression at all,
-1 (best_speed) gives best speed and 9 (best_compression) gives best
-compression. The default value is \fIdefault\fR.
+Defines the compression level to be used. 0 (\fInone\fR), gives no
+compression at all, 1 (\fIbest_speed\fR) gives best speed and 9
+(\fIbest_compression\fR) gives best compression. The default value is
+\fIdefault\fR.
 .RE
 
 .IP
@@ -536,7 +670,7 @@ subtypes of that type). Here is an example:
   mime_types = application/xml application/xhtml+xml application/rss+xml
 .fi
 
-By default, following MIME types are compressed (if
+By default, the following MIME types are compressed (if
 \fBdeflate\fR is set to true): \fItext/*, application/rtf, application/msword,
 application/pdf, application/x-dvi, application/javascript,
 application/x-javascript\fR. Multiple \fBmime_types\fR directive can be used.
@@ -562,7 +696,7 @@ when Yaws starts up. Defaults to \fIfalse\fR.
 .TP
 \fBpartial_post_size = Integer | nolimit\fR
 When a Yaws file receives large POSTs, the amount of data received in each chunk
-is determined by the this parameter.  The default value is \fI10240\fR. Setting
+is determined by this parameter.  The default value is \fI10240\fR. Setting
 it to nolimit is potentially dangerous.
 
 
@@ -605,7 +739,7 @@ Default is \fIindex_files = index.yaws index.html index.php\fR.
 
 .TP
 \fBappmods = ListOfModuleNames\fR
-If any the names in ListOfModuleNames appear as components in the path for a
+If any of the names in ListOfModuleNames appear as components in the path for a
 request, the path request parsing will terminate and that module will be
 called. There is also an alternate syntax for specifying the appmods if we don't
 want our internal erlang module names to be exposed in the URL paths.  We can
@@ -631,7 +765,7 @@ is particulaly interesting for '/' appmods.  Here is an example:
 .fi
 
 The above configuration will invoke the 'myapp' erlang module on everything
-except any file found in directories, 'icons', 'js' and 'top/static' relative to
+except any file found in directories 'icons', 'js' and 'top/static' relative to
 the docroot.
 
 .TP
@@ -697,11 +831,11 @@ The function can and must do the same things that a normal \fIout/1\fR does.
 .TP
 \fBerrormod_crash = Module\fR
 It is possible to set a special module that handles the HTML generation of
-server crash messages. The default is to display the entire formated crash
+server crash messages. The default is to display the entire formatted crash
 message in the browser. This is good for debugging but not in production.
 .br
 The function \fIModule:crashmsg(Arg, SC, Str)\fR will be called. The \fIStr\fR
-is the real crash message formated as a string.
+is the real crash message formatted as a string.
 .br
 The function must return, \fI{content,MimeType,Cont}\fR or \fI{html, Str}\fR or
 \fI{ehtml, Term}\fR. That data will be shipped to the client.
@@ -710,13 +844,17 @@ The function must return, \fI{content,MimeType,Cont}\fR or \fI{html, Str}\fR or
 \fBexpires = ListOfExpires\fR
 Controls the setting of the \fIExpires\fR HTTP header and the \fImax-age\fR
 directive of the \fICache-Control\fR HTTP header in server responses for
-specific MIME types. The expiration date can set to be relative to either the
-time the source file was last modified, or to the time of the client
-access. ListOfExpires is defined as follows:
+specific MIME types. The expiration date can be set as relative to either the
+time the source file was last modified; as the time of the client access; or as
+always in order to empty the cache altogether. ListOfExpires is defined as
+follows:
 
 .nf
-  expires = <MimeType1, access+Seconds> <MimeType2, modify+Seconds> ...
+  expires = <MimeType1, access+Seconds> <MimeType2, modify+Seconds> <MimeType3, always> ...
 .fi
+
+A MimeType can also have a wildcard as subtype or both as subtype and type,
+like type/* or */*.
 
 These HTTP headers are an instruction to the client about the document's
 validity and persistence. If cached, the document may be fetched from the cache
@@ -727,14 +865,25 @@ the source. Here is an example:
 .nf
   expires = <image/gif, access+2592000> <image/png, access+2592000>
   expires = <image/jpeg, access+2592000> <text/css, access+2592000>
+  expires = <text/*, always>
+.fi
+
+and here is another:
+
+.nf
+  expires = <*/*, always>
 .fi
 
 .TP
 \fBarg_rewrite_mod = Module\fR
-It is possible to install a module that rewrites all the Arg #arg{} records at
-an early stage in the Yaws server.  This can be used to do various things such
-as checking a cookie, rewriting paths etc.
-.br
+It is possible to install a module that rewrites all the Arg #arg{} records
+at an early stage in the Yaws server.  This can be used to do various
+things such as checking a cookie, rewriting paths etc. An arg_rewrite_mod
+must export an \fIarg_rewrite/1\fR function taking and returning an #arg{}
+record. If the function wants to return a response, it must set the
+#arg.state field of its return value to an instance of the
+#rewrite_response{} record.
+
 The module \fIyaws_vdir\fR can be used in case you want to serve static content
 that is not located in your docroot. See the example at the bottom of this man
 page for how to use the \fIopaque\fR + \fIvdir\fR elements to instruct the
@@ -820,6 +969,27 @@ doesn't necessarily have to be the same as the the name inside <server Name> in
 certain NAT scenarios. Rarely used feature.
 
 .TP
+\fBserveralias = ListOfNames\fR
+
+This directive sets the alternate names for a virtual host. A server alias may
+contain wildcards:
+.RS 12
+ '*' matches any sequence of zero or more characters
+ '?' matches one character unless that character is a period ('.')
+.RE
+.IP
+Multiple \fBserveralias\fR directives may be used. Here is an example:
+
+.nf
+  <server server.domain.com>
+    serveralias = server server2.domain.com server2
+    serveralias = *.server.domain.com *.server?.domain.com
+    ...
+  </server>
+.fi
+
+
+.TP
 \fBphp_handler = <Type, Spec>\fR
 Set handler to interpret .php files. It can be one of the following definitions:
 
@@ -844,6 +1014,12 @@ make use of this PHP server from Yaws, specify:
   php_handler = <fcgi, 127.0.0.1:54321>
 .fi
 
+If you need to specify an IPv6 address, use square brackets:
+
+.nf
+  php_handler = <fcgi, [::1]:54321>
+.fi
+
 The PHP interpreter needs read access to the files it is to serve. Thus, if you
 run it in a different security context than Yaws itself, make sure it has access
 to the .php files.
@@ -862,7 +1038,7 @@ allowed).
 .RS 12
 To interpret a .php file, the function \fIModule:Function(Arg)\fR will be
 invoked (Evaluated inside a rpc call if a \fINode\fR is specified), where Arg is
-a #arg{} record.
+an #arg{} record.
 .br
 The function must do the same things that a normal out/1 does.
 .RE
@@ -875,7 +1051,7 @@ Default value is \fI<cgi, "/usr/bin/php-cgi">\fR.
 \fBthis target is deprecated. use 'php_handler' target in server part
 instead.\fR
 .br
-Use this directive is same as: php_handler = <fcgi, Host:Port>.
+Using this directive is the same as: php_handler = <fcgi, Host:Port>.
 
 .TP
 \fBdefault_type = MimeType\fR
@@ -903,14 +1079,31 @@ mapping is defined in the global part and redefined in a server part using this
 directive, then it is replaced. Else it is kept.
 
 .TP
+\fBnslookup_pref = [inet | inet6]\fR
+For fcgi servers and revproxy URLs, define the name resolution
+preference. For example, to perform only IPv4 name resolution, use
+[inet]. To do both IPv4 and IPv6 but try IPv6 first, use [inet6, inet].
+Default value is [inet].
+
+.TP
 \fB<ssl> ... </ssl>\fR
-This begins and ends an SSL configuration for this server.  It's possible to
-virthost several SSL servers on the same IP given that they all share the same
-certificate configuration.  In general it is complicated to virthost several SSL
-servers on the same IP address since the certificate is typically bound to a
-domainname in the common name part of the certificate.  One solution (the only?)
-to this problem is to have a certificate with multiple subjectAltNames. See
-http://wiki.cacert.org/VhostTaskForce#Interoperability_Test
+
+This begins and ends an SSL configuration for this server. It's possible to
+virthost several SSL servers on the same IP/Port. If SNI support is disabled or
+not supported, they must share the same certificate configuration. In this
+situation, it is complicated to virthost several SSL servers on the same IP/Port
+since the certificate is typically bound to a domainname in the common name part
+of the certificate. One solution to this problem is to have a certificate with
+multiple subjectAltNames. If SNI support is enabled, SSL servers on the same
+IP/Port can have their own SSL configuration with a different SSL certificate
+for each one. See the global \fBsni\fR directive.
+
+The SNI support was introduced in the SSL application in Erlang/OTP 18.0. It is
+an extension to the TLS protocol (RFC 4366), which allows the client to include
+the requested hostname in the first message of its SSL handshake.
+
+See also http://wiki.cacert.org/VhostTaskForce#Interoperability_Test for browser
+compatibility.
 
 \fBkeyfile = File\fR
 .RS 12
@@ -934,29 +1127,32 @@ certificate is requested.
 .RE
 
 .IP
-\fBverify = 0 | 1 | 2 | verify_none | verify_peer\fR
+\fBdhfile = File\fR
 .RS 12
-Specifies the level of verification the server does on client certs.  0 means
-that the server will not ask for a cert (verify_none), 1 means that the server
-will ask the client for a cert but not fail if the client does not supply a
-client cert (verify_peer, fail_if_no_peer_cert = false), 2 means that the server
-requires the client to supply a client cert (verify_peer, fail_if_no_peer_cert =
-true).
+A file containing PEM-encoded Diffie-Hellman parameters to be used by
+the server if a cipher suite using Diffie-Hellman key exchange is
+negotiated. If not specified, default parameters are used.
+.RE
 
-Setting verify_none means that the x509 validation will be skipped (no
-certificate request is sent to the client), verify_peer means that a certificate
+.IP
+\fBverify = verify_none | verify_peer\fR
+.RS 12
+Specifies the level of verification the server does on client certs. Setting
+\fIverify_none\fR means that the x509 validation will be skipped (no certificate
+request is sent to the client), \fIverify_peer\fR means that a certificate
 request is sent to the client (x509 validation is performed.
 
-You might want to use fail_if_no_peer_cert in combination with verify_peer.
+You might want to use \fBfail_if_no_peer_cert\fR in combination with
+\fIverify_peer\fB.
 .RE
 
 .IP
 \fBfail_if_no_peer_cert = true | false\fR
 .RS 12
-If verify is set to verify_peer and set to true the connection will fail if the
-client does not send a certificate (i.e. an empty certificate). If set to false
-the server will fail only if an invalid certificate is supplied (an empty
-certificate is considered valid).
+If \fBverify\fR is set to \fIverify_peer\fR and set to \fItrue\fR the connection
+will fail if the client does not send a certificate (i.e. an empty
+certificate). If set to \fIfalse\fR the server will fail only if an invalid
+certificate is supplied (an empty certificate is considered valid).
 .RE
 
 .IP
@@ -972,8 +1168,8 @@ this to 0.
 .IP
 \fBpassword = String\fR
 .RS 12
-String If the private key is encrypted on disc, this password is the 3Dee key to
-decrypt it.
+If the private key is encrypted on disc, this password is the
+3DES key to decrypt it.
 .RE
 
 .IP
@@ -988,12 +1184,82 @@ ciphers = "[{dhe_rsa,aes_256_cbc,sha}, \\
 .fi
 .RE
 
+.IP
+\fBeccs = String\fR
+.RS 12
+This string specifies the supported Elliptic Curve Cryptography (ECC).
+It must be a subset of \fBssl:eccs()\fR.  For PCI DSS compliance
+(which is the main reason why you would want to change this), set it
+on a single line to:
+.nf
+
+eccs = "[sect571r1, sect571k1, secp521r1, brainpoolP512r1, \\
+         sect409k1, sect409r1, brainpoolP384r1, secp384r1, \\
+         sect283k1, sect283r1, brainpoolP256r1, secp256k1, \\
+         secp256r1, sect239k1, xsect233k1, sect233r1, \\
+         secp224k1, secp224r1]"
+.fi
+.RE
+
+.IP
+\fBsecure_renegotiate = true | false\fR
+.RS 12
+Specifies whether to reject renegotiation attempt that does not live up to
+RFC 5746. By default \fBsecure_renegotiate\fR is set to false i.e. secure
+renegotiation will be used if possible but it will fallback to unsecure
+renegotiation if the peer does not support RFC 5746.
+.RE
+
+.IP
+\fBclient_renegotiation = true | false\fR
+.RS 12
+Enables or disables the Erlang/OTP SSL application client renegotiation
+option. Defaults to true. See the \fIssl\fR manual page at
+http://www.erlang.org/doc/man/ssl.html for more details.
+
+\fBWARNING: This option was introduced in the SSL application in Erlang/OTP
+18.0, so Yaws ignores it for previous releases.\fR
+.RE
+
+.IP
+\fBhonor_cipher_order = true | false\fR
+.RS 12
+If true (the default), use the server's preference for cipher selection. If
+false, use the client's preference.
+
+\fBWARNING: This option was introduced in the SSL application in Erlang/OTP
+17.0, so Yaws ignores it for previous releases.\fR
+.RE
+
+.IP
+\fBprotocol_version = ProtocolList\fR
+.RS 12
+Specifies the list of SSL protocols that will be supported. If not set,
+defaults to all protocols supported by the erlang \fBssl\fR
+application. For example, to support only TLS versions 1.2, 1.1, and 1:
+.nf
+
+protocol_version = tlsv1.2, tlsv1.1, tlsv1
+.fi
+.RE
+
+.IP
+\fBrequire_sni = true | false\fR
+.RS 12
+If \fItrue\fR,the server will reject non SNI clients and clients providing an
+unknown SNI hostname (this last remark is only relevant for the first virtual
+server of a SSL group). This directive is ignored if SNI support is disabled (or
+not supported).
+
+Default is \fIfalse\fR.
+.RE
+
 .TP
 \fB<redirect> ... </redirect>\fR
 Defines a redirect mapping. The following items are allowed within a matching
 pair of <redirect> and </redirect> delimiters.
 
-We can have a series of redirect rules in one of formats below:
+We can have a series of redirect rules in one of the formats below:
 
 .nf
   Path = URL
@@ -1107,27 +1373,22 @@ callback would check if a valid cookie header is present, if not it would return
 .RE
 
 .IP
-\fBuser = User:Password\fR
+\fBuser = User:Password | "User:{Algo}Hash" | "User:{Algo}$Salt$Hash"\fR
 .RS 12
-Inside this directory, the user User has access if the user supplies the
-password Password in the popup dialogue presented by the browser.  We can
-obviously have several of these value inside a single <auth> </auth> pair.
-
-The usage of User:Password in the actual config file is deprecated as of release
-1.51. It is preferred to have the users in a file called \fI.yaws_auth\fR in the
-actual directory. The .yaws_auth file has to be file parseable by
-\fIfile:consult/1\fR
-
-Each row of the file must contain terms on the form
+Inside this directory, the user \fIUser\fR has access if the user supplies the
+password \fIPassword\fR in the popup dialogue presented by the browser. It is
+also possible to provide a hashed password, encoded in base64. In that case, the
+algorithm used to hash the password must be set. \fIAlgo\fR must be a one of the
+following algorithms:
 
 .nf
-    {User, Password}.
+    md5 | ripemd160 | sha | sha224 | sha256 | sha384 | sha512
 .fi
 
-Where both User and Password should be strings. The .yaws_auth file mechanism is
-recursive. Thus any subdirectories to Dir are automatically also protected.
+It is possible to use salted hashes. If so, the \fISalt\fR must be provided,
+encoded in base64. We can obviously have several of these value inside a single
+<auth> </auth> pair.
 
-The .yaws_auth file is never visible in a dir listing
 .RE
 
 .IP

@@ -28,9 +28,10 @@
 
 -module(jsonrpc).
 -author("Gaspar Chilingarov <nm@web.am>, Gurgen Tumanyan <barbarian@armkb.com>").
--vsn("3").
 -export([call/3]).
 -export([s/2]).        % extract element from proplist
+
+-include("../include/yaws.hrl").
 
 %%%
 %%% call function calls json-rpc method on remote host
@@ -58,11 +59,13 @@ call(URL, Options, Payload) ->
                    end,
         decode_call_payload(RespBody)
     catch
-        error:Err->
-            error_logger:error_report([{'json_rpc:call', error},
-                                       {error, Err},
-                                       {stack, erlang:get_stacktrace()}]),
-            {error,Err}
+        ?MAKE_ST(error:Err,St,
+                 begin
+                     error_logger:error_report([{'json_rpc:call', error},
+                                                {error, Err},
+                                                {stack, St}]),
+                     {error,Err}
+                 end)
     end.
 
 %%%
@@ -72,7 +75,7 @@ encode_call_payload({call, Method, Args}) when is_list(Args) ->
     %% id makes sense when there are many requests in same
     %% communication channel and replies can come in random
     %% order here it can be changed to something less expensive
-    ID = element(3, erlang:now()),
+    ID = element(3, yaws:unique_triple()),
     Struct =  json2:encode({struct, [{"jsonrpc", "2.0"},
                                      {method, Method},
                                      {params, {array, Args}},

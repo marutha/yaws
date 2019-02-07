@@ -5,11 +5,7 @@
 /*          posix interface                                  */
 
 
-#ifndef WIN32
 #include <unistd.h>
-#endif
-
-
 #include <sys/types.h>
 #include <stdio.h>
 #include <string.h>
@@ -49,7 +45,7 @@ static ErlDrvData setuid_start(ErlDrvPort port, char *buf)
                     (setreuid(pe->pw_uid, pe->pw_uid) != 0)) {
                     return (ErlDrvData) -1;
                 }
-                sprintf(xbuf, "ok %d", pe->pw_uid);
+                sprintf(xbuf, "ok %u", (unsigned)pe->pw_uid);
                 endpwent();
                 driver_output(port,xbuf, strlen(xbuf));
                 return (ErlDrvData) port;
@@ -72,13 +68,13 @@ static ErlDrvData setuid_start(ErlDrvPort port, char *buf)
         return (ErlDrvData) port;
     }
     case 'g':   /* getuid */
-        sprintf(xbuf, "ok %d", getuid());
+        sprintf(xbuf, "ok %u", (unsigned)getuid());
         driver_output(port,xbuf, strlen(xbuf));
         return (ErlDrvData) port;
     case 'u':
         while ((pe = getpwent())) {
             if (strcmp(pe->pw_name , t) == 0) {
-                sprintf(xbuf, "ok %d", pe->pw_uid);
+                sprintf(xbuf, "ok %u", (unsigned)pe->pw_uid);
                 endpwent();
                 driver_output(port,xbuf, strlen(xbuf));
                 return (ErlDrvData) port;
@@ -136,7 +132,6 @@ DRIVER_INIT(setuid_drv)
     setuid_driver_entry.ready_async     = NULL;
     setuid_driver_entry.flush           = NULL;
     setuid_driver_entry.call            = NULL;
-    setuid_driver_entry.event           = NULL;
     setuid_driver_entry.extended_marker = ERL_DRV_EXTENDED_MARKER;
     setuid_driver_entry.major_version   = ERL_DRV_EXTENDED_MAJOR_VERSION;
     setuid_driver_entry.minor_version   = ERL_DRV_EXTENDED_MINOR_VERSION;

@@ -2,7 +2,7 @@
 /* author: vinoski@ieee.org                                  */
 /* Created : 09 Nov 2008 by Steve Vinoski <vinoski@ieee.org> */
 
-#ifdef HAVE_YAWS_SENDFILE
+#ifdef HAVE_SENDFILE
 
 #include <errno.h>
 #include <stdint.h>
@@ -258,7 +258,8 @@ static void yaws_sendfile_drv_ready_output(ErlDrvData handle, ErlDrvEvent ev)
     cur_offset = xfer->offset;
     result = yaws_sendfile_call(sfd->socket_fd, xfer->file_fd,
                                 &xfer->offset, xfer->count);
-    if (result < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+    if (result < 0 && (errno == EAGAIN || errno == EWOULDBLOCK ||
+                       errno == EINPROGRESS || errno == EALREADY)) {
         if (xfer->offset != cur_offset) {
             off_t written = xfer->offset - cur_offset;
             xfer->count -= written;
@@ -328,4 +329,4 @@ DRIVER_INIT(yaws_sendfile_drv)
 
 #error "yaws_sendfile_drv not supported on this platform"
 
-#endif /* HAVE_YAWS_SENDFILE */
+#endif /* HAVE_SENDFILE */

@@ -16,7 +16,7 @@
          open/0, open/1,
          write/2, write/3,
          disable_trace/1, enable_trace/2,
-
+         get_tracedir/0,
          set_filter/1, unset_filter/0, get_filter/0,
 
          %% Internal functions exported to be used in filters
@@ -118,7 +118,8 @@ enable_trace(Type, Time) when Type =:= http; Type =:= traffic ->
                                   [Type, Time])
     end.
 
-
+get_tracedir() ->
+    gen_server:call(?MODULE, get_tracedir, infinity).
 
 set_filter(Filter) ->
     Expr = filter2expr(Filter),
@@ -169,6 +170,8 @@ handle_call(unset_filter, _From, State) ->
     {reply, ok, State#state{filter=undefined}};
 handle_call(get_filter, _From, State) ->
     {reply, State#state.filter, State};
+handle_call(get_tracedir, _From, State) ->
+    {reply, State#state.tracedir, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
@@ -187,7 +190,7 @@ handle_cast({setup, GC}, State) ->
             error_logger:info_msg("Trace directory ~p created~n", [Dir]),
             {noreply, State#state{type=Type, tty_trace=Bool, tracedir=Dir}};
         {error, Reason} ->
-            error_logger:error_msg("Failed to create  trace directory ~p: ~p~n",
+            error_logger:error_msg("Failed to create trace directory ~p: ~p~n",
                                    [Dir, file:format_error(Reason)]),
             {noreply, State#state{type=false, tty_trace=Bool}}
     end;
@@ -315,7 +318,7 @@ write_trace(_Pid, Fd, Str, false) ->
 
 iso_8601_fmt() ->
     {{Year,Month,Day},{Hour,Min,Sec}} = erlang:localtime(),
-    {_,_,MicroSec} = now(),
+    {_,_,MicroSec} = yaws:get_time_tuple(),
     io_lib:format("~4.10.0B-~2.10.0B-~2.10.0B ~2.10.0B:~2.10.0B:~2.10.0B.~w",
                   [Year, Month, Day, Hour, Min, Sec, (MicroSec div 1000)]).
 

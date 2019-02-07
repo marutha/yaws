@@ -15,12 +15,9 @@ out(A) ->
 <div id="entry">
   <h1>Build and install Yaws</h1>
   <p>
-    Yaws used to be hosted at Sourceforge, but as of release 1.81 yaws is
-    hosted at github.
-  </p>
-  <p>
-    The github page is <a href="http://github.com/klacke/yaws">
-    http://github.com/klacke/yaws</a>
+    Yaws is hosted at <a
+    href="http://github.com/klacke/yaws">http://github.com/klacke/yaws</a>. (Prior
+    to release 1.81 Yaws was hosted at Sourceforge.)
   </p>
   <p>
     Tested releases are downloadable from the Yaws download directory
@@ -32,6 +29,9 @@ out(A) ->
     To check out the latest release and build a number of prerequisites
     are required. (All code example below on Ubuntu)
   </p>
+  <p>
+  <strong>NOTE: Erlang/OTP R17 or higher is required.</strong>
+  </p>
   <ul>
     <li>
       <p>
@@ -39,9 +39,8 @@ out(A) ->
       </p>
       <div class="box">
         <pre>
-# apt-get build-dep erlang yaws
-# apt-get install erlang-nox erlang-src erlang-manpages erlang-mode
-# apt-get install erlang-mode erlang-dev
+# sudo apt-get build-dep erlang yaws
+# sudo apt-get install erlang-nox erlang-src erlang-manpages erlang-mode erlang-dev libtool
         </pre>
       </div>
     </li>
@@ -51,7 +50,7 @@ out(A) ->
       </p>
       <div class="box">
         <pre>
-# apt-get install git-core
+# sudo apt-get install git-core
         </pre>
       </div>
     </li>
@@ -104,25 +103,28 @@ out(A) ->
 # git clone git://github.com/klacke/yaws.git
     </pre>
   </div>
-  <p>To build and to what is knows as a local install, e.g.
+  <p>To build and to what is knows as a <em>local</em> install, e.g.
   a developer install do:
   </p>
   <div class="box">
     <pre>
 # cd yaws
-# autoconf; ./configure; make; make local_install
+# autoreconf -fi
+# ./configure --prefix=/path/to/yaws
+# make install
     </pre>
   </div>
   <p>
-    Alternatively, to make a proper install
+    Alternatively, to make a <em>standard</em> install
   </p>
   <div class="box">
     <pre>
 # cd yaws
+# autoreconf -fi
 # ./configure --help
 # ./configure --localstatedir=/var --sysconfdir=/etc
 # make
-# make install
+# sudo make install
     </pre>
   </div>
 
@@ -132,29 +134,47 @@ out(A) ->
     127.0.0.1:80 with the docroot set to the local documentation.
   </p>
   <p>
-    <em>make</em> (without install) will build the yaws system and
-    make local_install
-    does a local install at http://127.0.0.1:8000
+    A <em>local</em> install does install yaws at http://127.0.0.1:8000
   </p>
   <p>
-    This is the typical mode of operation
-    while either just trying out yaws, or hacking yaws. This will install
-    a template configuration file yaws.conf in $HOME.
-    If $HOME/yaws.conf exists, the old file will not be overwritten.
+    This is the typical mode of operation while either just trying out yaws, or
+    hacking yaws. This will install a template configuration file
+    <em>yaws.conf</em> in <em>${prefix}/etc/yaws</em> (<em>${prefix}</em> is the
+    value of the <em>--prefix</em> option passed during the execution of the
+    configure script).  If this file exists, the old file will not be
+    overwritten.
   </p>
   <p>
-    To run a locally installed system, we run the yaws script found in the
-    bin directory in the source code tree or $HOME/bin/yaws.
+    To run a locally installed system, we run the installed yaws script
+    <em>${prefix}/bin/yaws</em>.
   </p>
 
   <p>
-    <tt>make install</tt>
-    will also build the yaws system and also
-    install it in /usr/local. A configuration file /etc/yaws/yaws.conf will
-    also be installed unless the file already exists. The default config
-    file will set up the system to listen on http://127.0.0.1:80
+    A <em>standard</em> install will install yaws in <em>/usr/local</em>. A
+    configuration file <em>/etc/yaws/yaws.conf</em> will also be installed
+    unless the file already exists. The default config file will set up the
+    system to listen on http://127.0.0.1:80
   </p>
 
+  <h2>Building with Rebar</h2>
+  <p>
+    Yaws can alternatively be built using <a
+    href="https://github.com/rebar/rebar">rebar</a>. Assuming you already
+    have <code>rebar</code> installed, simply type
+  </p>
+  <div class="box">
+    <pre>
+$ rebar get-deps compile
+    </pre>
+  </div>
+  <p>
+    This fetches all dependencies and builds Yaws.
+  </p>
+  <p>
+    The <a href="rebar_release.yaws">rebar_release page</a> explains how to
+    use <code>rebar</code> to create an Erlang release for an application
+    that depends on Yaws.
+  </p>
 
   <h2>Running yaws</h2>
   <p>
@@ -166,9 +186,8 @@ out(A) ->
     </a>
 
     <p>
-      When developing yaws code, the interactive mode is ideal. Typically "
-      yaws is then started as:
-
+      When developing yaws code, the interactive mode is ideal. Typically, yaws
+      is then started as:
     </p>
      <div class="box">
        <pre>
@@ -190,10 +209,9 @@ out(A) ->
 
      <h2>Configuring Yaws</h2>
      <p>
-       Web server configuration can be supplied to yaws  "
-       in either of two ways depending
-       on whether we run yaws as a standalone daemon or if we run yaws as an
-       embedded application inside another Erlang program.
+       Web server configuration can be supplied to yaws in either of two ways
+       depending on whether we run yaws as a standalone daemon or if we run yaws
+       as an embedded application inside another Erlang program.
      </p>
      <p>
        The yaws configuration is described in
@@ -206,7 +224,8 @@ out(A) ->
      <p>
        It is possible to run yaws in embedded mode where yaws is part of a
        larger application. When running yaws in embedded mode, it is often not
-       possible to let yaws read its configuration data from /etc/yaws/yaws.conf.
+       possible to let yaws read its configuration data from
+       <em>/etc/yaws/yaws.conf</em>.
      </p>
 
      <p>

@@ -33,7 +33,6 @@ start_link() ->
 %%----------------------------------------------------------------------
 %%----------------------------------------------------------------------
 init([]) ->
-
     ChildSpecs = child_specs(),
 
     %% The idea behind this is if we're running in an embedded env,
@@ -62,7 +61,12 @@ child_specs() ->
            {yaws_sup_restarts, start_link, []},
            transient, infinity, supervisor, [yaws_sup_restarts]},
 
-    [YawsLog, YawsTrace, YawsServ, Sup].
+    %% supervisor for websocket callback processes
+    WSSup = {yaws_ws_sup,
+             {yaws_ws_sup, start_link, []},
+             transient, infinity, supervisor, [yaws_ws_sup]},
+
+    [YawsLog, YawsTrace, YawsServ, Sup, WSSup].
 
 %%----------------------------------------------------------------------
 %%----------------------------------------------------------------------
@@ -124,10 +128,26 @@ get_app_args() ->
              {ok, Id0} ->
                  Id0
          end,
+    Enc = case application:get_env(yaws, encoding) of
+              undefined ->
+                  case {member({yaws, ["encoding", "latin1"]}, AS),
+                        member({yaws, ["encoding", "unicode"]}, AS)} of
+                      {true, _} -> latin1;
+                      {_, true} -> unicode;
+                      _         -> latin1
+                  end;
+              {ok, latin1} ->
+                  latin1;
+              {ok, unicode} ->
+                  unicode;
+              _ ->
+                  latin1
+          end,
 
     #env{debug = Debug, trace = Trace,
          traceoutput = TraceOutput, conf = Conf,
-         runmod = RunMod, embedded = Embedded, id = Id}.
+         runmod = RunMod, embedded = Embedded, id = Id,
+         encoding = Enc}.
 
 %%----------------------------------------------------------------------
 %%----------------------------------------------------------------------

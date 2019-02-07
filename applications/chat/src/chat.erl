@@ -35,11 +35,11 @@
                cookie}).
 
 
-login(User, Password) ->
+login(User, _Password) ->
     session_server(),
     erlang:send(chat_server, {new_session, User, self()}),
     receive
-        {session_manager, Cookie, Session} ->
+        {session_manager, Cookie, _Session} ->
             chat_server ! {join_message, User},
             {ok, Cookie};
         _ ->
@@ -76,7 +76,7 @@ check_cookie(Cookie) ->
 get_user(Session) ->
     Session#user.user.
 
-display_login(A, Status) ->
+display_login(_A, Status) ->
     (dynamic_headers() ++
      [{ehtml,
        [{body, [{onload,"document.f.user.focus();"},{bgcolor,?COLOR3}],
@@ -148,7 +148,7 @@ chat_server(Users0) ->
             end,
             chat_server(Users);
         {new_session, User, From} ->
-            Cookie = integer_to_list(bin2int(crypto:rand_bytes(16))),
+            Cookie = integer_to_list(bin2int(crypto:strong_rand_bytes(16))),
             Session = #user{cookie=Cookie, user=User, color=pick_color()},
             From ! {session_manager, Cookie, Session},
             chat_server([Session|Users]);
@@ -197,7 +197,7 @@ bin2int(Bin) ->
 cancel_read([], _Pid) ->
     [];
 cancel_read([U|Us], Pid) when U#user.pid == Pid ->
-    Now = inow(now()),
+    Now = inow(yaws:get_time_tuple()),
     [U#user{pid=undefined,last_read=Now}|Us];
 cancel_read([U|Us], Pid) ->
     [U|cancel_read(Us, Pid)].
@@ -207,10 +207,10 @@ cancel_read([U|Us], Pid) ->
 user_read(Users, User, Pid) ->
     user_read(Users, User, Pid, Users).
 
-user_read([], User, Pid, All) ->
+user_read([], _User, _Pid, All) ->
     All;
 
-user_read([U|Users], User, Pid, All) when U#user.cookie == User#user.cookie ->
+user_read([U|Users], User, Pid, _All) when U#user.cookie == User#user.cookie ->
     if U#user.buffer /= [] ->
             Pid ! {msgs,lists:reverse(U#user.buffer)},
             [U#user{buffer=[]}|Users];
@@ -224,7 +224,7 @@ user_read([U|Users], User, Pid, All) ->
 %%
 
 send_to_all(Type, Msg, Users) ->
-    Now = inow(now()),
+    Now = inow(yaws:get_time_tuple()),
     F = fun(U) ->
                 if U#user.pid /= undefined ->
                         %% io:format("Sending ~p to ~p\n", [Msg, U#user.user]),
@@ -239,7 +239,7 @@ send_to_all(Type, Msg, Users) ->
 %%
 
 send_to_one(Type, Msg, Users, User) ->
-    Now = inow(now()),
+    Now = inow(yaws:get_time_tuple()),
     F = fun(U) when U#user.cookie == User#user.cookie  ->
                 if U#user.pid /= undefined ->
                         %% io:format("Sending ~p to ~p\n", [Msg, U#user.user]),
@@ -257,7 +257,7 @@ send_to_one(Type, Msg, Users, User) ->
 
 
 gc_users(Users) ->
-    Now = inow(now()),
+    Now = inow(yaws:get_time_tuple()),
     gc_users(Users, Now).
 
 gc_users([], _Now) ->
@@ -304,7 +304,7 @@ chat_read(A) ->
                     catch erlang:send(chat_server, {cancel_read, self()}),
                     dynamic_headers()++[{html, "timeout"}, break]
             end;
-        Error ->
+        _Error ->
             dynamic_headers()++[{html, "error"}, break]
     end.
 

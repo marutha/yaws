@@ -5,13 +5,12 @@
 %%% Created : 24 Jan 2002 by Claes Wikstrom <klacke@hyber.org>
 %%%----------------------------------------------------------------------
 
--author('klacke@hyber.org').
-
 -record(arg, {
           clisock,        % the socket leading to the peer client
           client_ip_port, % {ClientIp, ClientPort} tuple
           headers,        % headers
-          req,            % request
+          req,            % request (possibly rewritten)
+          orig_req,       % original request
           clidata,        % The client data (as a binary in POST requests)
           server_path,    % The normalized server path
                           % (pre-querystring part of URI)
